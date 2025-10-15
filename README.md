@@ -279,4 +279,4 @@ Please include:
 
 ## ⚖️ License
 
-MIT © redisX Authors
+Apache 2.0 © redisX Authors
