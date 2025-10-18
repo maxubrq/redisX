@@ -1,26 +1,57 @@
 {
   "name": "redisx",
   "version": "0.1.0",
-  "description": "redis-client",
-  "keywords": [
-    "redis"
-  ],
-  "homepage": "https://github.com/maxubrq/redisX#readme",
-  "bugs": {
-    "url": "https://github.com/maxubrq/redisX/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/maxubrq/redisX.git"
-  },
-  "license": "ISC",
+  "description": "redisX is a modern, type-safe Redis client for Node.js and TypeScript. It offers a clean API, full IntelliSense support, and strong developer experience while remaining lightweight and fast.",
+  "license": "Apache-2.0",
   "author": "maxubrq",
+  "repository": "github:maxubrq/redisX",
   "type": "module",
-  "main": "index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsdown build src/index.ts --format esm,cjs --dts --sourcemap --clean",
+    "dev": "tsdown build src/index.ts --format esm,cjs --dts --sourcemap --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build && npm run typecheck && npm test",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "check-format": "prettier --check \"src/**/*.ts\""
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "@types/node": "^20.0.0",
+    "eslint": "^9.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.4",
+    "prettier": "^3.6.2",
+    "tsdown": "^0.15.7",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,js,json,md}": [
+      "prettier --write",
+      "eslint --fix"
+    ]
   }
 }
