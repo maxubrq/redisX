@@ -66,47 +66,47 @@ export class CommandRegistry {
     private _registerBasicCommands(): void {
         // Register individual basic commands
         this.register('ping', {
-            execute: (context, command, ...args) => {
+            execute: async (context, command, ...args) => {
                 const message = args[0] as string | undefined;
-                return this._basicCommands.ping(context, message);
+                return this._basicCommands.ping(context, message) as any;
             },
         });
 
         this.register('echo', {
-            execute: (context, command, ...args) => {
+            execute: async (context, command, ...args) => {
                 const message = args[0] as string;
-                return this._basicCommands.echo(context, message);
+                return this._basicCommands.echo(context, message) as any;
             },
         });
 
         this.register('get', {
-            execute: (context, command, ...args) => {
+            execute: async (context, command, ...args) => {
                 const key = args[0] as string;
                 const options = args[1] as GetOptions | undefined;
-                return this._basicCommands.get(context, key, options);
+                return this._basicCommands.get(context, key, options) as any;
             },
         });
 
         this.register('set', {
-            execute: (context, command, ...args) => {
+            execute: async (context, command, ...args) => {
                 const key = args[0] as string;
                 const value = args[1] as string;
                 const options = args[2] as SetOptions | undefined;
-                return this._basicCommands.set(context, key, value, options);
+                return this._basicCommands.set(context, key, value, options) as any;
             },
         });
 
         this.register('del', {
-            execute: (context, command, ...args) => {
+            execute: async (context, command, ...args) => {
                 const keys = args as string[];
-                return this._basicCommands.del(context, ...keys);
+                return this._basicCommands.del(context, ...keys) as any;
             },
         });
 
         this.register('exists', {
-            execute: (context, command, ...args) => {
+            execute: async (context, command, ...args) => {
                 const keys = args as string[];
-                return this._basicCommands.exists(context, ...keys);
+                return this._basicCommands.exists(context, ...keys) as any;
             },
         });
     }

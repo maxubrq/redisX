@@ -29,7 +29,7 @@ export class BasicCommands implements CommandExecutor {
      */
     async ping(context: CommandContext, message?: string): Promise<PingResponse> {
         const args = message ? [message] : [];
-        return context.connection.sendCommand<PingResponse>('PING', ...args);
+        return context.connection.sendCommand('PING', ...args) as Promise<PingResponse>;
     }
 
     /**
@@ -39,7 +39,7 @@ export class BasicCommands implements CommandExecutor {
      * @returns The echoed message
      */
     async echo(context: CommandContext, message: string): Promise<EchoResponse> {
-        return context.connection.sendCommand<EchoResponse>('ECHO', message);
+        return context.connection.sendCommand('ECHO', message) as Promise<EchoResponse>;
     }
 
     /**
@@ -52,7 +52,7 @@ export class BasicCommands implements CommandExecutor {
     async get(context: CommandContext, key: string, _options?: GetOptions): Promise<GetResponse> {
         // For now, we don't support GET options in basic implementation
         // This would be extended for GET with additional flags
-        return context.connection.sendCommand<GetResponse>('GET', key);
+        return context.connection.sendCommand('GET', key) as Promise<GetResponse>;
     }
 
     /**
@@ -70,7 +70,7 @@ export class BasicCommands implements CommandExecutor {
         options?: SetOptions,
     ): Promise<SetResponse> {
         const args = this._buildSetArgs(key, value, options);
-        return context.connection.sendCommand<SetResponse>('SET', ...args);
+        return context.connection.sendCommand('SET', ...args) as Promise<SetResponse>;
     }
 
     /**
@@ -83,7 +83,7 @@ export class BasicCommands implements CommandExecutor {
         if (keys.length === 0) {
             throw new Error('DEL requires at least one key');
         }
-        return context.connection.sendCommand<DelResponse>('DEL', ...keys);
+        return context.connection.sendCommand('DEL', ...keys) as Promise<DelResponse>;
     }
 
     /**
@@ -96,7 +96,7 @@ export class BasicCommands implements CommandExecutor {
         if (keys.length === 0) {
             throw new Error('EXISTS requires at least one key');
         }
-        return context.connection.sendCommand<ExistsResponse>('EXISTS', ...keys);
+        return context.connection.sendCommand('EXISTS', ...keys) as Promise<ExistsResponse>;
     }
 
     /**
@@ -111,7 +111,7 @@ export class BasicCommands implements CommandExecutor {
         command: string,
         ...args: unknown[]
     ): Promise<T> {
-        return context.connection.sendCommand<T>(command, ...args);
+        return context.connection.sendCommand(command, ...args) as Promise<T>;
     }
 
     /**
