@@ -33,6 +33,7 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "test:ci": "bash scripts/test-ci-locally.sh",
+    "verify:typecheck": "bash scripts/verify-typecheck-exclusions.sh",
     "prepublishOnly": "npm run build && npm run typecheck && npm test",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
