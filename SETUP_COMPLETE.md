@@ -185,10 +185,10 @@ Your project has high quality standards:
 
 | Metric     | Threshold | Status |
 |------------|-----------|--------|
-| Statements | 95%       | 🎯     |
-| Branches   | 90%       | 🎯     |
-| Functions  | 95%       | 🎯     |
-| Lines      | 95%       | 🎯     |
+| Statements | 80%       | 🎯     |
+| Branches   | 80%       | 🎯     |
+| Functions  | 80%       | 🎯     |
+| Lines      | 80%       | 🎯     |
 
 ## 🐛 Troubleshooting
 
