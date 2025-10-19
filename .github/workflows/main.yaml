@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run typecheck
+        run: pnpm typecheck
+
+      - name: Run tests with coverage
+        run: pnpm coverage
+        continue-on-error: true
+        id: tests
+
+      - name: Parse coverage
+        id: coverage
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            COVERAGE=$(jq '.total.statements.pct' coverage/coverage-summary.json | awk '{print int($1+0.5)}')
+            echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+            echo "Coverage: $COVERAGE%"
+          else
+            echo "percentage=0" >> $GITHUB_OUTPUT
+            echo "Coverage file not found"
+          fi
+
+      - name: Determine coverage color
+        id: coverage-color
+        run: |
+          COVERAGE=${{ steps.coverage.outputs.percentage }}
+          if [ $COVERAGE -ge 90 ]; then
+            echo "color=brightgreen" >> $GITHUB_OUTPUT
+          elif [ $COVERAGE -ge 80 ]; then
+            echo "color=green" >> $GITHUB_OUTPUT
+          elif [ $COVERAGE -ge 70 ]; then
+            echo "color=yellow" >> $GITHUB_OUTPUT
+          elif [ $COVERAGE -ge 60 ]; then
+            echo "color=orange" >> $GITHUB_OUTPUT
+          else
+            echo "color=red" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build project
+        run: pnpm build
+
+      - name: Update README badges (main branch only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # Determine test status
+          if [ "${{ steps.tests.outcome }}" == "success" ]; then
+            TEST_STATUS="passing"
+            TEST_COLOR="brightgreen"
+          else
+            TEST_STATUS="failing"
+            TEST_COLOR="red"
+          fi
+          
+          # Create badges
+          TEST_BADGE="![Tests](https://img.shields.io/badge/tests-${TEST_STATUS}-${TEST_COLOR})"
+          COVERAGE_BADGE="![Coverage](https://img.shields.io/badge/coverage-${{ steps.coverage.outputs.percentage }}%25-${{ steps.coverage-color.outputs.color }})"
+          
+          # Update badges using sed (escape special characters)
+          if grep -q "!\[Tests\]" README.md; then
+            # Update existing test badge - match the entire badge line
+            sed -i "s|!\[Tests\](https://[^)]*)|${TEST_BADGE}|g" README.md
+          fi
+          
+          if grep -q "!\[Coverage\]" README.md; then
+            # Update existing coverage badge - match the entire badge line
+            sed -i "s|!\[Coverage\](https://[^)]*)|${COVERAGE_BADGE}|g" README.md
+          fi
+
+      - name: Commit badge updates
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          if git diff --quiet README.md; then
+            echo "No changes to commit"
+          else
+            git add README.md
+            git commit -m "chore: update test and coverage badges [skip ci]"
+            git push
+          fi
+
+      - name: Fail job if tests failed
+        if: steps.tests.outcome != 'success'
+        run: exit 1
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+

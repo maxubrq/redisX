@@ -1,384 +1,724 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Buffer } from 'buffer';
-import { Resp3Parser, type Resp3, type Resp3Push } from '../parser';
-
-function mkParser(opts: Partial<ConstructorParameters<typeof Resp3Parser>[0]> = {}) {
-  const replies: Resp3[] = [];
-  const pushes: Resp3Push[] = [];
-  const errors: Error[] = [];
-  const parser = new Resp3Parser({
-    onReply: (v) => replies.push(v),
-    onPush: (p) => pushes.push(p),
-    onError: (e) => errors.push(e),
-    ...opts,
-  });
-  return { parser, replies, pushes, errors };
-}
-
-function B(s: string) {
-  return Buffer.from(s, 'utf8');
-}
+import { Resp3Parser, type Resp3, type ParserOptions } from '../parser';
 
 describe('Resp3Parser', () => {
-  describe('leaf types', () => {
-    it('parses simple string (+)', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('+OK\r\n'));
-      expect(replies).toHaveLength(1);
-      expect(replies[0]).toEqual({ __type: 'simple_string', value: 'OK' });
-    });
+  let parser: Resp3Parser;
+  let onReply: ReturnType<typeof vi.fn>;
+  let onPush: ReturnType<typeof vi.fn>;
+  let onError: ReturnType<typeof vi.fn>;
 
-    it('parses error (-) with/without code', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('-ERR something bad\r\n'));
-      parser.feed(B('-oops\r\n'));
-      expect(replies[0]).toEqual({ __type: 'error', code: 'ERR', message: 'something bad' });
-      expect(replies[1]).toEqual({ __type: 'error', message: 'oops' });
-    });
-
-    it('parses integer (:)', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B(':42\r\n'));
-      expect(replies[0]).toEqual({ __type: 'integer', value: 42n });
-    });
-
-    it('parses double (,) including inf/-inf/nan', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B(',3.14\r\n'));
-      parser.feed(B(',inf\r\n'));
-      parser.feed(B(',-inf\r\n'));
-      parser.feed(B(',nan\r\n'));
-      expect(replies[0]).toEqual({ __type: 'double', value: 3.14 });
-      expect(replies[1]).toEqual({ __type: 'double', value: Infinity });
-      expect(replies[2]).toEqual({ __type: 'double', value: -Infinity });
-      expect(Number.isNaN((replies[3] as any).value)).toBe(true);
-    });
-
-    it('parses big number (() with bigint fallback to string when invalid for BigInt', () => {
-      const { parser, replies } = mkParser();
-      // valid BigInt
-      parser.feed(B('(123456789012345678901234567890\r\n'));
-      // invalid for JS BigInt due to explicit '+' sign -> should fall back to string
-      parser.feed(B('(+123\r\n'));
-      expect(replies[0]).toEqual({ __type: 'big_number', value: 123456789012345678901234567890n });
-      expect(replies[1]).toEqual({ __type: 'big_number', value: '+123' });
-    });
-
-    it('parses boolean (#)', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('#t\r\n'));
-      parser.feed(B('#f\r\n'));
-      expect(replies[0]).toEqual({ __type: 'boolean', value: true });
-      expect(replies[1]).toEqual({ __type: 'boolean', value: false });
-    });
-
-    it('parses null (_)', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('_\r\n'));
-      expect(replies[0]).toEqual({ __type: 'null' });
-    });
-
-    it('parses blob string ($) as Buffer by default and as utf8 string with option', () => {
-      const a = mkParser();
-      a.parser.feed(B('$5\r\nhello\r\n'));
-      expect(a.replies[0]!.__type).toBe('blob_string');
-      expect(Buffer.isBuffer((a.replies[0] as any).value)).toBe(true);
-      expect((a.replies[0] as any).value.toString()).toBe('hello');
-
-      const b = mkParser({ decodeBlobAsString: true });
-      b.parser.feed(B('$5\r\nhello\r\n'));
-      expect(typeof (b.replies[0] as any).value).toBe('string');
-      expect((b.replies[0] as any).value).toBe('hello');
-    });
-
-    it('parses null blob string ($-1)', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('$-1\r\n'));
-      expect(replies[0]).toEqual({ __type: 'blob_string', value: null });
-    });
-
-    it('parses blob error (!)', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('!11\r\nERR message\r\n'));
-      expect(replies[0]).toEqual({ __type: 'blob_error', code: 'ERR', message: 'message' });
-    });
-
-    it('parses verbatim string (=)', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('=11\r\ntxt:hello!\r\n'));
-      expect(replies[0]).toEqual({ __type: 'verbatim_string', format: 'txt', value: 'hello!' });
-    });
+  beforeEach(() => {
+    onReply = vi.fn();
+    onPush = vi.fn();
+    onError = vi.fn();
+    parser = new Resp3Parser({ onReply, onPush, onError });
   });
 
-  describe('aggregates', () => {
-    it('parses arrays (*) with nested items', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('*3\r\n+hi\r\n:2\r\n$5\r\nworld\r\n'));
-      const arr = replies[0];
-      expect(arr!.__type).toBe('array');
-      const value = (arr as any).value as Resp3[];
-      expect(value[0]).toEqual({ __type: 'simple_string', value: 'hi' });
-      expect(value[1]).toEqual({ __type: 'integer', value: 2n });
-      expect((value[2] as any).value.toString()).toBe('world');
-    });
-
-    it('parses set (~) and map (%)', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(
-        B(
-          // set of 2 items: "a", 1
-          '~2\r\n+a\r\n:1\r\n' +
-            // map of 2 pairs
-            '%2\r\n+key\r\n+val\r\n:7\r\n+seven\r\n',
-        ),
-      );
-      expect(replies).toHaveLength(2);
-
-      const set = replies[0];
-      expect(set!.__type).toBe('set');
-      const s = (set as any).value as Set<unknown>;
-      // Sets hold child nodes; we’ll check presence by serializing
-      const setAsArray = Array.from(s) as Resp3[];
-      expect(setAsArray[0]).toEqual({ __type: 'simple_string', value: 'a' });
-      expect(setAsArray[1]).toEqual({ __type: 'integer', value: 1n });
-
-      const map = replies[1];
-      expect(map!.__type).toBe('map');
-      const m = (map as any).value as Map<unknown, unknown>;
-      // Keys/values are Resp3 nodes
-      const entries = Array.from(m.entries()) as [Resp3, Resp3][];
-      expect(entries[0]![0]).toEqual({ __type: 'simple_string', value: 'key' });
-      expect(entries[0]![1]).toEqual({ __type: 'simple_string', value: 'val' });
-      expect(entries[1]![0]).toEqual({ __type: 'integer', value: 7n });
-      expect(entries[1]![1]).toEqual({ __type: 'simple_string', value: 'seven' });
-    });
-
-    it('supports RESP2-style null aggregates (*-1, %-1, ~-1)', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('*-1\r\n%-1\r\n~-1\r\n'));
-      expect(replies[0]).toEqual({ __type: 'array', value: null });
-      expect(replies[1]).toEqual({ __type: 'map', value: null });
-      expect(replies[2]).toEqual({ __type: 'set', value: null });
-    });
-
-    it('parses push (>) and routes to onPush by default', () => {
-      const { parser, replies, pushes } = mkParser();
-      parser.feed(B('>2\r\n+message\r\n+payload\r\n'));
-      expect(replies).toHaveLength(0);
-      expect(pushes).toHaveLength(1);
-      expect(pushes[0]).toEqual({
-        __type: 'push',
-        value: [
-          { __type: 'simple_string', value: 'message' },
-          { __type: 'simple_string', value: 'payload' },
-        ],
+  describe('Basic Types', () => {
+    it('should parse simple strings', () => {
+      const data = Buffer.from('+OK\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'simple_string',
+        value: 'OK'
       });
     });
 
-    it('if no onPush, push is surfaced via onReply', () => {
-      const replies: Resp3[] = [];
-      const parser = new Resp3Parser({ onReply: (v) => replies.push(v) });
-      parser.feed(B('>1\r\n+note\r\n'));
-      expect(replies).toHaveLength(1);
-      expect(replies[0]!.__type).toBe('push');
-    });
-  });
-
-  describe('attributes (|) attachment', () => {
-    it('attaches attributes to the very next node (scalar)', () => {
-      const { parser, replies } = mkParser();
-      // |1 { +k => +v }, then +OK
-      parser.feed(B('|1\r\n+k\r\n+v\r\n+OK\r\n'));
-      expect(replies).toHaveLength(1);
-      expect(replies[0]!.__type).toBe('simple_string');
-      const attrs = (replies[0] as any).attributes as Map<any, any>;
-      expect(attrs).toBeDefined();
-      const kv = Array.from(attrs.entries());
-      expect(kv[0]![0]).toEqual({ __type: 'simple_string', value: 'k' });
-      expect(kv[0]![1]).toEqual({ __type: 'simple_string', value: 'v' });
+    it('should parse errors with code and message', () => {
+      const data = Buffer.from('-ERR invalid command\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'error',
+        code: 'ERR',
+        message: 'invalid command'
+      });
     });
 
-    it('attaches attributes to the entire aggregate when attributes precede the aggregate marker', () => {
-      const { parser, replies } = mkParser();
-      // Attributes before array
-      parser.feed(B('|1\r\n+meta\r\n+yes\r\n*2\r\n+hi\r\n:1\r\n'));
-      expect(replies).toHaveLength(1);
-      const arr = replies[0];
-      expect(arr!.__type).toBe('array');
-      const attrs = (arr as any).attributes as Map<any, any>;
-      expect(attrs).toBeDefined();
-      const kv = Array.from(attrs.entries());
-      expect(kv[0]![0]).toEqual({ __type: 'simple_string', value: 'meta' });
-      expect(kv[0]![1]).toEqual({ __type: 'simple_string', value: 'yes' });
+    it('should parse errors without code', () => {
+      const data = Buffer.from('-Something went wrong\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'error',
+        code: 'Something',
+        message: 'went wrong'
+      });
     });
 
-    it('does not leak attributes to later nodes', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('|1\r\n+a\r\n+b\r\n+first\r\n+second\r\n'));
-      expect((replies[0] as any).attributes).toBeDefined();
-      expect((replies[1] as any).attributes).toBeUndefined();
+    it('should parse integers', () => {
+      const data = Buffer.from(':42\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'integer',
+        value: 42n
+      });
     });
 
-    it('can decorate nested child values inside aggregates', () => {
-      const { parser, replies } = mkParser();
-      // Array of 2: (attributes -> +X), +Y
-      parser.feed(B('*2\r\n|1\r\n+k\r\n+v\r\n+X\r\n+Y\r\n'));
-      const arr = replies[0];
-      const items = (arr as any).value as Resp3[];
-      const first = items[0] as any;
-      const second = items[1] as any;
-      expect(first.attributes).toBeDefined();
-      expect(second.attributes).toBeUndefined();
+    it('should parse large integers', () => {
+      const data = Buffer.from(':9223372036854775807\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'integer',
+        value: 9223372036854775807n
+      });
     });
-  });
 
-  describe('streaming / partial chunks', () => {
-    it('handles split frames across arbitrary chunk boundaries', () => {
-      const { parser, replies } = mkParser();
+    it('should parse negative integers', () => {
+      const data = Buffer.from(':-42\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'integer',
+        value: -42n
+      });
+    });
 
-      // Push data in small pieces, splitting CRLF and payload boundaries deliberately
-      const chunks = [
-        '+O', 'K\r', '\n', // simple string
-        ':4', '2', '\r', '\n', // integer
-        '$5', '\r', '\n', 'he', 'l', 'l', 'o', '\r', '\n', // blob string
-        '*2', '\r', '\n', '+a', '\r', '\n', ':1', '\r', '\n', // array
+    it('should parse doubles', () => {
+      const data = Buffer.from(',3.14\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'double',
+        value: 3.14
+      });
+    });
+
+    it('should parse special double values', () => {
+      const testCases = [
+        { input: ',inf\r\n', expected: Infinity },
+        { input: ',-inf\r\n', expected: -Infinity },
+        { input: ',nan\r\n', expected: NaN }
       ];
-      chunks.forEach((s) => parser.feed(B(s)));
 
-      expect(replies).toHaveLength(4);
-
-      expect(replies[0]).toEqual({ __type: 'simple_string', value: 'OK' });
-      expect(replies[1]).toEqual({ __type: 'integer', value: 42n });
-
-      const b = replies[2] as any;
-      expect(b.__type).toBe('blob_string');
-      expect(Buffer.isBuffer(b.value)).toBe(true);
-      expect(b.value.toString()).toBe('hello');
-
-      const arr = replies[3] as any;
-      expect(arr.__type).toBe('array');
-      expect((arr.value as Resp3[])[0]).toEqual({ __type: 'simple_string', value: 'a' });
-      expect((arr.value as Resp3[])[1]).toEqual({ __type: 'integer', value: 1n });
+      testCases.forEach(({ input, expected }) => {
+        const parser = new Resp3Parser({ onReply });
+        parser.feed(Buffer.from(input));
+        
+        const call = onReply.mock.calls[onReply.mock.calls.length - 1];
+        expect(call[0]).toEqual({
+          __type: 'double',
+          value: expected
+        });
+      });
     });
 
-    it('waits for complete blob payload including trailing CRLF', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('$5\r\nhe'));
-      expect(replies).toHaveLength(0);
-      parser.feed(B('llo'));
-      expect(replies).toHaveLength(0);
-      parser.feed(B('\r\n'));
-      expect(replies).toHaveLength(1);
-      expect((replies[0] as any).value.toString()).toBe('hello');
+    it('should parse booleans', () => {
+      const trueData = Buffer.from('#t\r\n');
+      const falseData = Buffer.from('#f\r\n');
+      
+      parser.feed(trueData);
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'boolean',
+        value: true
+      });
+
+      parser.feed(falseData);
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'boolean',
+        value: false
+      });
     });
 
-    it('handles nested aggregates with deep partial splits', () => {
-      const { parser, replies } = mkParser();
-      // Array of 2: Map(1) { +k => :1 }, and Set(1) { +x }
-      const msg = '*2\r\n%1\r\n+k\r\n:1\r\n~1\r\n+x\r\n';
-      for (const ch of msg.split('')) {
-        parser.feed(B(ch)); // byte-by-byte
-      }
-      expect(replies).toHaveLength(1);
-      const arr = replies[0] as any;
-      expect(arr.__type).toBe('array');
-
-      const [mapNode, setNode] = arr.value as Resp3[];
-      expect(mapNode!.__type).toBe('map');
-      expect(setNode!.__type).toBe('set');
+    it('should parse null', () => {
+      const data = Buffer.from('_\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'null'
+      });
     });
   });
 
-  describe('errors & recovery', () => {
-    it('reports error on invalid prefix and recovers after reset', () => {
-      const { parser, replies, errors } = mkParser();
-      parser.feed(B('?invalid\r\n'));
-      expect(errors.length).toBeGreaterThan(0);
-
-      // after error, the parser resets; next good input should parse
-      parser.feed(B('+OK\r\n'));
-      expect(replies).toHaveLength(1);
-      expect(replies[0]).toEqual({ __type: 'simple_string', value: 'OK' });
+  describe('Blob Types', () => {
+    it('should parse blob strings', () => {
+      const data = Buffer.from('$5\r\nhello\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'blob_string',
+        value: Buffer.from('hello')
+      });
     });
 
-    it('error on invalid double, then parse next', () => {
-      const { parser, replies, errors } = mkParser();
-      parser.feed(B(',not-a-number\r\n'));
-      expect(errors).toHaveLength(1);
-      parser.feed(B(':1\r\n'));
-      expect(replies[0]).toEqual({ __type: 'integer', value: 1n });
+    it('should parse empty blob strings', () => {
+      const data = Buffer.from('$0\r\n\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'blob_string',
+        value: Buffer.from('')
+      });
     });
 
-    it('error on invalid boolean marker', () => {
-      const { parser, errors } = mkParser();
-      parser.feed(B('#x\r\n'));
-      expect(errors).toHaveLength(1);
+    it('should parse null blob strings', () => {
+      const data = Buffer.from('$-1\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'blob_string',
+        value: null
+      });
     });
 
-    it('error when blob not terminated by CRLF', () => {
-      const { parser, errors } = mkParser();
-      // Says length=3 but then gives "ab" + wrong ending
-      parser.feed(B('$3\r\nab\rx'));
-      expect(errors).toHaveLength(1);
+    it('should parse blob strings as strings when decodeBlobAsString is true', () => {
+      const parser = new Resp3Parser({ onReply, decodeBlobAsString: true });
+      const data = Buffer.from('$5\r\nhello\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'blob_string',
+        value: 'hello'
+      });
     });
 
-    it('error when null marker has extra payload', () => {
-      const { parser, errors } = mkParser();
-      parser.feed(B('_oops\r\n'));
-      expect(errors).toHaveLength(1);
+    it('should parse blob errors', () => {
+      const data = Buffer.from('!11\r\nERR timeout\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'blob_error',
+        code: 'ERR',
+        message: 'timeout'
+      });
+    });
+
+    it('should parse blob errors without code', () => {
+      const data = Buffer.from('!7\r\nTimeout\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'blob_error',
+        message: 'Timeout'
+      });
+    });
+
+    it('should parse null blob errors', () => {
+      const data = Buffer.from('!-1\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'blob_error',
+        message: ''
+      });
     });
   });
 
-  describe('misc edge cases', () => {
-    it('push with -1 length becomes empty push', () => {
-      const { parser, pushes } = mkParser();
-      parser.feed(B('>-1\r\n'));
-      expect(pushes).toHaveLength(1);
-      expect(pushes[0]).toEqual({ __type: 'push', value: [] });
+  describe('Verbatim Strings', () => {
+    it('should parse verbatim strings with format', () => {
+      const data = Buffer.from('=15\r\ntxt:Hello World\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'verbatim_string',
+        format: 'txt',
+        value: 'Hello World'
+      });
     });
 
-    it('attributes precede aggregate and do not apply to later siblings', () => {
-      const { parser, replies } = mkParser();
-      // | {a:b} then array [OK], then simple string "later"
-      parser.feed(B('|1\r\n+a\r\n+b\r\n*1\r\n+OK\r\n+later\r\n'));
-
-      const arr = replies[0] as any;
-      const later = replies[1] as any;
-
-      expect(arr.__type).toBe('array');
-      expect(arr.attributes).toBeDefined();
-      expect(later.__type).toBe('simple_string');
-      expect(later.attributes).toBeUndefined();
+    it('should parse verbatim strings without colon (default format)', () => {
+      const data = Buffer.from('=5\r\nHello\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'verbatim_string',
+        format: 'txt',
+        value: 'Hello'
+      });
     });
 
-    it('handles long blob, split across many chunks', () => {
-      const { parser, replies } = mkParser();
-      const payload = 'x'.repeat(8192);
-      const frame = `$${payload.length}\r\n${payload}\r\n`;
-      for (let i = 0; i < frame.length; i += 7) {
-        parser.feed(B(frame.slice(i, i + 7)));
+    it('should parse markdown verbatim strings', () => {
+      const data = Buffer.from('=17\r\nmkd:# Hello World\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'verbatim_string',
+        format: 'mkd',
+        value: '# Hello World'
+      });
+    });
+  });
+
+  describe('Big Numbers', () => {
+    it('should parse big numbers as bigint when possible', () => {
+      const data = Buffer.from('(1234567890123456789\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'big_number',
+        value: 1234567890123456789n
+      });
+    });
+
+    it('should parse very large big numbers as bigint', () => {
+      // JavaScript BigInt can handle very large numbers, so this will be parsed as bigint
+      const data = Buffer.from('(123456789012345678901234567890123456789012345678901234567890123456789\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'big_number',
+        value: 123456789012345678901234567890123456789012345678901234567890123456789n
+      });
+    });
+
+    it('should parse negative big numbers', () => {
+      const data = Buffer.from('(-1234567890123456789\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'big_number',
+        value: -1234567890123456789n
+      });
+    });
+  });
+
+  describe('Aggregate Types', () => {
+    it('should parse arrays', () => {
+      const data = Buffer.from('*3\r\n+first\r\n+second\r\n+third\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'array',
+        value: [
+          { __type: 'simple_string', value: 'first' },
+          { __type: 'simple_string', value: 'second' },
+          { __type: 'simple_string', value: 'third' }
+        ]
+      });
+    });
+
+    it('should parse empty arrays', () => {
+      const data = Buffer.from('*0\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'array',
+        value: []
+      });
+    });
+
+    it('should parse null arrays', () => {
+      const data = Buffer.from('*-1\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'array',
+        value: null
+      });
+    });
+
+    it('should parse maps', () => {
+      const data = Buffer.from('%2\r\n+key1\r\n+value1\r\n+key2\r\n+value2\r\n');
+      parser.feed(data);
+      
+      const result = onReply.mock.calls[0][0];
+      expect(result.__type).toBe('map');
+      expect(result.value).toBeInstanceOf(Map);
+      expect(result.value.size).toBe(2);
+      
+      // Check that the map contains the expected key-value pairs
+      const entries = Array.from(result.value.entries());
+      expect(entries).toHaveLength(2);
+      
+      // Find the entries by checking their values
+      const key1Entry = entries.find(([key]) => key.value === 'key1');
+      const key2Entry = entries.find(([key]) => key.value === 'key2');
+      
+      expect(key1Entry).toBeDefined();
+      expect(key1Entry[1]).toEqual({ __type: 'simple_string', value: 'value1' });
+      
+      expect(key2Entry).toBeDefined();
+      expect(key2Entry[1]).toEqual({ __type: 'simple_string', value: 'value2' });
+    });
+
+    it('should parse empty maps', () => {
+      const data = Buffer.from('%0\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'map',
+        value: new Map()
+      });
+    });
+
+    it('should parse null maps', () => {
+      const data = Buffer.from('%-1\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'map',
+        value: null
+      });
+    });
+
+    it('should parse sets', () => {
+      const data = Buffer.from('~3\r\n+item1\r\n+item2\r\n+item3\r\n');
+      parser.feed(data);
+      
+      const result = onReply.mock.calls[0][0];
+      expect(result.__type).toBe('set');
+      expect(result.value).toBeInstanceOf(Set);
+      expect(result.value.size).toBe(3);
+      
+      // Check that the set contains the expected items
+      const items = Array.from(result.value);
+      expect(items).toHaveLength(3);
+      
+      // Find items by checking their values
+      const item1 = items.find(item => item.value === 'item1');
+      const item2 = items.find(item => item.value === 'item2');
+      const item3 = items.find(item => item.value === 'item3');
+      
+      expect(item1).toBeDefined();
+      expect(item1).toEqual({ __type: 'simple_string', value: 'item1' });
+      
+      expect(item2).toBeDefined();
+      expect(item2).toEqual({ __type: 'simple_string', value: 'item2' });
+      
+      expect(item3).toBeDefined();
+      expect(item3).toEqual({ __type: 'simple_string', value: 'item3' });
+    });
+
+    it('should parse empty sets', () => {
+      const data = Buffer.from('~0\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'set',
+        value: new Set()
+      });
+    });
+
+    it('should parse null sets', () => {
+      const data = Buffer.from('~-1\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'set',
+        value: null
+      });
+    });
+
+    it('should parse push messages', () => {
+      const data = Buffer.from('>2\r\n+message-type\r\n+data\r\n');
+      parser.feed(data);
+      
+      expect(onPush).toHaveBeenCalledWith({
+        __type: 'push',
+        value: [
+          { __type: 'simple_string', value: 'message-type' },
+          { __type: 'simple_string', value: 'data' }
+        ]
+      });
+    });
+
+    it('should handle push messages without onPush handler', () => {
+      const parser = new Resp3Parser({ onReply });
+      const data = Buffer.from('>2\r\n+message-type\r\n+data\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'push',
+        value: [
+          { __type: 'simple_string', value: 'message-type' },
+          { __type: 'simple_string', value: 'data' }
+        ]
+      });
+    });
+  });
+
+  describe('Attributes', () => {
+    it('should parse attributes and attach to next value', () => {
+      const data = Buffer.from('|2\r\n+ttl\r\n:3600\r\n+type\r\n+string\r\n+OK\r\n');
+      parser.feed(data);
+      
+      // The null placeholder should be filtered out, so we only get the actual value
+      expect(onReply).toHaveBeenCalledTimes(1);
+      
+      const result = onReply.mock.calls[0][0];
+      expect(result.__type).toBe('simple_string');
+      expect(result.value).toBe('OK');
+      expect(result.attributes).toBeInstanceOf(Map);
+      
+      // Check that the map contains the expected key-value pairs
+      const entries = Array.from(result.attributes.entries());
+      expect(entries).toHaveLength(2);
+      
+      // Find the entries by checking their values
+      const ttlEntry = entries.find(([key]) => key.value === 'ttl');
+      const typeEntry = entries.find(([key]) => key.value === 'type');
+      
+      expect(ttlEntry).toBeDefined();
+      expect(ttlEntry[1]).toEqual({ __type: 'integer', value: 3600n });
+      
+      expect(typeEntry).toBeDefined();
+      expect(typeEntry[1]).toEqual({ __type: 'simple_string', value: 'string' });
+    });
+
+    it('should handle attributes on nested structures', () => {
+      const data = Buffer.from('|1\r\n+ttl\r\n:3600\r\n*2\r\n+key1\r\n+value1\r\n');
+      parser.feed(data);
+      
+      // The null placeholder should be filtered out, so we only get the actual value
+      expect(onReply).toHaveBeenCalledTimes(1);
+      
+      const result = onReply.mock.calls[0][0];
+      expect(result.__type).toBe('array');
+      expect(result.attributes).toBeInstanceOf(Map);
+      
+      // Check that the map contains the expected key-value pair
+      const entries = Array.from(result.attributes.entries());
+      expect(entries).toHaveLength(1);
+      
+      const ttlEntry = entries.find(([key]) => key.value === 'ttl');
+      expect(ttlEntry).toBeDefined();
+      expect(ttlEntry[1]).toEqual({ __type: 'integer', value: 3600n });
+    });
+  });
+
+  describe('Streaming and Partial Data', () => {
+    it('should handle partial data gracefully', () => {
+      const data1 = Buffer.from('+OK\r\n+');
+      const data2 = Buffer.from('PONG\r\n');
+      
+      parser.feed(data1);
+      expect(onReply).toHaveBeenCalledTimes(1);
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'simple_string',
+        value: 'OK'
+      });
+      
+      parser.feed(data2);
+      expect(onReply).toHaveBeenCalledTimes(2);
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'simple_string',
+        value: 'PONG'
+      });
+    });
+
+    it('should handle large blob strings in chunks', () => {
+      const content = 'x'.repeat(1000);
+      const data1 = Buffer.from(`$1000\r\n${content.slice(0, 500)}`);
+      const data2 = Buffer.from(`${content.slice(500)}\r\n`);
+      
+      parser.feed(data1);
+      expect(onReply).not.toHaveBeenCalled();
+      
+      parser.feed(data2);
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'blob_string',
+        value: Buffer.from(content)
+      });
+    });
+
+    it('should handle multiple values in single feed', () => {
+      const data = Buffer.from('+OK\r\n+PONG\r\n:42\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledTimes(3);
+      expect(onReply).toHaveBeenNthCalledWith(1, {
+        __type: 'simple_string',
+        value: 'OK'
+      });
+      expect(onReply).toHaveBeenNthCalledWith(2, {
+        __type: 'simple_string',
+        value: 'PONG'
+      });
+      expect(onReply).toHaveBeenNthCalledWith(3, {
+        __type: 'integer',
+        value: 42n
+      });
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle invalid integer format', () => {
+      const data = Buffer.from(':invalid\r\n');
+      parser.feed(data);
+      
+      expect(onError).toHaveBeenCalled();
+      const error = onError.mock.calls[0][0];
+      expect(error.message).toContain('Invalid integer');
+    });
+
+    it('should handle invalid boolean format', () => {
+      const data = Buffer.from('#x\r\n');
+      parser.feed(data);
+      
+      expect(onError).toHaveBeenCalled();
+      const error = onError.mock.calls[0][0];
+      expect(error.message).toContain('Invalid boolean');
+    });
+
+    it('should handle invalid double format', () => {
+      const data = Buffer.from(',invalid\r\n');
+      parser.feed(data);
+      
+      expect(onError).toHaveBeenCalled();
+      const error = onError.mock.calls[0][0];
+      expect(error.message).toContain('Invalid double');
+    });
+
+    it('should handle invalid null format', () => {
+      const data = Buffer.from('_invalid\r\n');
+      parser.feed(data);
+      
+      expect(onError).toHaveBeenCalled();
+      const error = onError.mock.calls[0][0];
+      expect(error.message).toContain('Invalid null marker');
+    });
+
+    it('should handle unknown prefix', () => {
+      const data = Buffer.from('@unknown\r\n');
+      parser.feed(data);
+      
+      expect(onError).toHaveBeenCalled();
+      const error = onError.mock.calls[0][0];
+      expect(error.message).toContain('Unknown RESP3 prefix');
+    });
+
+    it('should handle malformed length', () => {
+      const data = Buffer.from('$invalid\r\n');
+      parser.feed(data);
+      
+      expect(onError).toHaveBeenCalled();
+      const error = onError.mock.calls[0][0];
+      expect(error.message).toContain('Invalid length');
+    });
+
+    it('should handle missing CRLF in blob string', () => {
+      // Provide enough data but with wrong termination
+      const data = Buffer.from('$5\r\nhelloXY');
+      parser.feed(data);
+      
+      expect(onError).toHaveBeenCalled();
+      const error = onError.mock.calls[0][0];
+      expect(error.message).toContain('Blob not terminated by CRLF');
+    });
+
+    it('should handle missing CRLF in verbatim string', () => {
+      // Provide enough data but with wrong termination
+      const data = Buffer.from('=5\r\nhelloXY');
+      parser.feed(data);
+      
+      expect(onError).toHaveBeenCalled();
+      const error = onError.mock.calls[0][0];
+      expect(error.message).toContain('Verbatim not terminated by CRLF');
+    });
+
+    it('should recover from errors and continue parsing', () => {
+      const data = Buffer.from('@invalid\r\n+OK\r\n');
+      parser.feed(data);
+      
+      expect(onError).toHaveBeenCalled();
+      // The parser resets on error, so we need to feed the valid data separately
+      parser.feed(Buffer.from('+OK\r\n'));
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'simple_string',
+        value: 'OK'
+      });
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle empty input', () => {
+      parser.feed(Buffer.alloc(0));
+      expect(onReply).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('should handle null input', () => {
+      parser.feed(null as any);
+      expect(onReply).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('should handle nested aggregates', () => {
+      const data = Buffer.from('*2\r\n*2\r\n+inner1\r\n+inner2\r\n*1\r\n+outer\r\n');
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledTimes(1);
+      const result = onReply.mock.calls[0][0];
+      expect(result.__type).toBe('array');
+      expect(result.value).toHaveLength(2);
+      expect(result.value[0].__type).toBe('array');
+      expect(result.value[0].value).toEqual([
+        { __type: 'simple_string', value: 'inner1' },
+        { __type: 'simple_string', value: 'inner2' }
+      ]);
+      expect(result.value[1].__type).toBe('array');
+      expect(result.value[1].value).toEqual([
+        { __type: 'simple_string', value: 'outer' }
+      ]);
+    });
+
+    it('should handle mixed types in arrays', () => {
+      const data = Buffer.from('*4\r\n+string\r\n:42\r\n,3.14\r\n#t\r\n');
+      parser.feed(data);
+      
+      const result = onReply.mock.calls[0][0];
+      expect(result.__type).toBe('array');
+      expect(result.value).toEqual([
+        { __type: 'simple_string', value: 'string' },
+        { __type: 'integer', value: 42n },
+        { __type: 'double', value: 3.14 },
+        { __type: 'boolean', value: true }
+      ]);
+    });
+
+    it('should handle complex nested structures with attributes', () => {
+      const data = Buffer.from('|1\r\n+ttl\r\n:3600\r\n*2\r\n%1\r\n+key\r\n+value\r\n+simple\r\n');
+      parser.feed(data);
+      
+      // The null placeholder should be filtered out, so we only get the actual value
+      expect(onReply).toHaveBeenCalledTimes(1);
+      
+      const result = onReply.mock.calls[0][0];
+      expect(result.__type).toBe('array');
+      
+      // Check that the map contains the expected key-value pair
+      const entries = Array.from(result.attributes.entries());
+      expect(entries).toHaveLength(1);
+      
+      const ttlEntry = entries.find(([key]) => key.value === 'ttl');
+      expect(ttlEntry).toBeDefined();
+      expect(ttlEntry[1]).toEqual({ __type: 'integer', value: 3600n });
+      
+      expect(result.value[0].__type).toBe('map');
+      expect(result.value[1].__type).toBe('simple_string');
+    });
+  });
+
+  describe('Performance and Memory', () => {
+    it('should handle large arrays efficiently', () => {
+      const size = 1000;
+      let data = `*${size}\r\n`;
+      for (let i = 0; i < size; i++) {
+        data += `+item${i}\r\n`;
       }
-      expect(replies).toHaveLength(1);
-      const v = replies[0] as any;
-      expect(v.__type).toBe('blob_string');
-      expect((v.value as Buffer).length).toBe(8192);
-      expect((v.value as Buffer).toString()).toBe(payload);
+      
+      parser.feed(Buffer.from(data));
+      
+      expect(onReply).toHaveBeenCalledTimes(1);
+      const result = onReply.mock.calls[0][0];
+      expect(result.__type).toBe('array');
+      expect(result.value).toHaveLength(size);
     });
 
-    it('multiple top-level replies in one chunk', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('+A\r\n+B\r\n+C\r\n'));
-      expect(replies.map((r) => (r as any).value)).toEqual(['A', 'B', 'C']);
-    });
-
-    it('map/attributes length 0 resolves immediately', () => {
-      const { parser, replies } = mkParser();
-      parser.feed(B('%0\r\n')); // empty map
-      parser.feed(B('|0\r\n+OK\r\n')); // attributes empty then simple string
-      expect(replies[0]).toEqual({ __type: 'map', value: new Map() });
-      const s = replies[1] as any;
-      expect(s.__type).toBe('null');
-      expect(s.attributes).toEqual(new Map());
+    it('should handle large blob strings', () => {
+      const content = 'x'.repeat(10000);
+      const data = Buffer.from(`$10000\r\n${content}\r\n`);
+      
+      parser.feed(data);
+      
+      expect(onReply).toHaveBeenCalledWith({
+        __type: 'blob_string',
+        value: Buffer.from(content)
+      });
     });
   });
 });

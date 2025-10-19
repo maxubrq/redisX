@@ -299,50 +299,57 @@ export class Resp3Parser implements IResp3Parser {
     private consumeNested(): Resp3 | typeof NEED_MORE | undefined {
         // Loop: keep parsing children until we either need more data or we complete 1+ frames
         while (this._frames.length > 0) {
+            // First, check if the top frame is already complete (remaining === 0)
+            // This can happen after a child frame was completed and added to it
+            let top = this._frames[this._frames.length - 1]!;
+            if (top.remaining === 0) {
+                // Finalize this complete frame
+                const completed = this.finalizeFrameInstant(top);
+                this._frames.pop();
+                const withAttrs = this.attachExplicitAttrs(completed, top.attrs);
+                
+                if (this._frames.length === 0) {
+                    // Completed the top-level value
+                    return withAttrs;
+                }
+                
+                // Add this completed frame to its parent
+                const parent = this._frames[this._frames.length - 1]!;
+                parent.items.push(withAttrs);
+                parent.remaining -= 1;
+                
+                // Loop back to check if parent is now complete
+                continue;
+            }
+            
+            // Top frame needs more children, parse one
             const start = this._offset;
+            const frameCountBefore = this._frames.length;
             const child = this.parseOne();
+            
             if (child === NEED_MORE) {
                 this._offset = start;
                 return NEED_MORE;
             }
+            
+            // If child is undefined, check if a new frame was pushed
+            // (parseAggregate pushes frame and returns undefined)
             if (child === undefined) {
+                if (this._frames.length > frameCountBefore) {
+                    // A new frame was pushed, continue parsing its children
+                    continue;
+                }
+                // Otherwise, we're at end of buffer
                 this._offset = start;
                 return NEED_MORE;
             }
 
             // child produced -> attach into current frame
-            const top = this._frames[this._frames.length - 1]!;
+            top = this._frames[this._frames.length - 1]!; // Re-get top in case it changed
             top.items.push(child);
             top.remaining -= 1;
-
-            if (top.remaining > 0) {
-                // continue to fill the same frame
-                continue;
-            }
-
-            // finalize top frame
-            const completed = this.finalizeFrameInstant(top);
-            this._frames.pop();
-
-            // attach attributes that were pending *before* the aggregate marker
-            const withAttrs = this.attachExplicitAttrs(completed, top.attrs);
-
-            if (this._frames.length === 0) {
-                // we completed a full top-level value
-                return withAttrs;
-            } else {
-                // This completed value becomes a child of parent frame; loop again to place it
-                // but to do that, we need to push it back as a parsed node without re-parsing.
-                // Easiest: emulate that we "just parsed" this completed node by pushing into parent.
-                const parent = this._frames[this._frames.length - 1]!;
-                parent.items.push(withAttrs);
-                parent.remaining -= 1;
-                if (parent.remaining === 0) {
-                    // Parent also completes; keep collapsing possibly multiple levels.
-                    continue;
-                }
-                // Otherwise keep parsing children for the current (still-incomplete) parent.
-            }
+            
+            // Loop back to check if this frame is now complete
         }
 
         // No frames means no aggregate in progress
@@ -378,7 +385,8 @@ export class Resp3Parser implements IResp3Parser {
             kind: kind as any,
             remaining: kind === 'map' || kind === 'attributes' ? length * 2 : length,
             items: [],
-            attrs: this.stealPendingAttributes() as any,
+            // Don't steal pending attributes for the attributes aggregate itself
+            attrs: kind === 'attributes' ? undefined : (this.stealPendingAttributes() as any),
         };
 
         // If length is 0, we can finalize immediately
@@ -386,9 +394,10 @@ export class Resp3Parser implements IResp3Parser {
             return this.attachAttrs(this.finalizeFrameInstant(frame));
         }
 
-        // Push frame and continue parsing nested children
+        // Push frame and return undefined to signal we need to parse children
+        // The caller (consumeNested or feed) will continue parsing
         this._frames.push(frame);
-        return this.consumeNested();
+        return undefined;
     }
 
     private parseNull(): Resp3 | typeof NEED_MORE {
@@ -516,7 +525,8 @@ export class Resp3Parser implements IResp3Parser {
 
     private handleValue(node: Resp3) {
         // Drop internal-null used as attributes placeholder
-        if (node.__type === 'null' && node.attributes === undefined && this._frames.length > 0)
+        // Check if we have pending attributes, which indicates this null is from attributes parsing
+        if (node.__type === 'null' && node.attributes === undefined && this._pendingAttributes !== undefined)
             return;
 
         // Push frames go to onPush if provided, else surface as normal
@@ -567,7 +577,27 @@ export class Resp3Parser implements IResp3Parser {
                     this._offset = start;
                     break;
                 }
-                if (node === undefined) break; // nothing to parse
+                
+                // If node is undefined, check if we pushed a frame (started aggregate)
+                if (node === undefined) {
+                    if (this._frames.length > 0) {
+                        // We started an aggregate, consume its children
+                        const completed = this.consumeNested();
+                        if (completed === NEED_MORE) {
+                            // Need more data to complete the aggregate
+                            break;
+                        }
+                        if (completed === undefined) {
+                            // This shouldn't happen if frames.length > 0
+                            break;
+                        }
+                        this.handleValue(completed);
+                        continue;
+                    }
+                    // No frames and no node means end of buffer
+                    break;
+                }
+                
                 this.handleValue(node);
             }
         } catch (err) {

@@ -1,5 +1,7 @@
 # 🧠 **redisX — The Redis Client Reinvented**
 
+![Tests](https://img.shields.io/badge/tests-unknown-lightgrey) ![Coverage](https://img.shields.io/badge/coverage-0%25-red)
+
 > **Type-safe • Distributed • Intent-driven**
 >
 > A **RESP3-native, high-performance, TypeScript Redis client** engineered for modern distributed systems — with first-class primitives for **leases, rate limiting, queues, smart blocking, and idempotency**.
