@@ -1,6 +1,6 @@
 # 🧠 **redisX — The Redis Client Reinvented**
 
-![Tests](https://img.shields.io/badge/tests-passing-brightgreen) ![Coverage](https://img.shields.io/badge/coverage-96%25-brightgreen)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen) ![Coverage](https://img.shields.io/badge/coverage-93%25-brightgreen)
 
 > **Type-safe • Distributed • Intent-driven**
 >
