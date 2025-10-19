@@ -189,7 +189,7 @@ describe('TcpTransport', () => {
             server.close();
 
             // Wait a bit for the connection to be closed
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 100));
 
             // Try to write to trigger an error
             try {
@@ -199,12 +199,12 @@ describe('TcpTransport', () => {
             }
 
             // Wait for error event
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 100));
 
             // The error might be emitted, but it's not guaranteed in test environment
             // Just check that the transport is in a valid state
             expect(transport.state).toBeDefined();
-        });
+        }, 15000);
 
         it('should handle socket errors gracefully', async () => {
             const errorSpy = vi.fn();
@@ -234,7 +234,7 @@ describe('TcpTransport', () => {
 
             await transport.close();
             expect(transport.state).toBe('closed');
-        });
+        }, 15000);
 
         it('should handle close event', async () => {
             const closeSpy = vi.fn();

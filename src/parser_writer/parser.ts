@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/ban-types */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Buffer } from 'buffer';
 
 /** RESP3 value model (you can tweak to your taste/SDK) */
@@ -107,7 +107,7 @@ export class Resp3Parser implements IResp3Parser {
     private _frames: Frame[] = [];
     private _pendingAttributes: Resp3Attributes | undefined;
 
-    constructor(private opts: ParserOptions = {}) {}
+    constructor(public opts: ParserOptions = {}) {}
 
     private attachAttrs<T extends { attributes?: Resp3Attributes }>(node: T): T {
         if (this._pendingAttributes) {
@@ -381,7 +381,7 @@ export class Resp3Parser implements IResp3Parser {
             return this.attachAttrs(base);
         }
 
-        let frame: Frame = {
+        const frame: Frame = {
             kind: kind as any,
             remaining: kind === 'map' || kind === 'attributes' ? length * 2 : length,
             items: [],
@@ -572,7 +572,6 @@ export class Resp3Parser implements IResp3Parser {
 
         // parse as much as we can
         try {
-            // eslint-disable-next-line no-constant-condition
             while (true) {
                 const start = this._offset;
                 const node = this.parseOne();

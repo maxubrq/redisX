@@ -1,19 +1,7 @@
-import { Socket } from 'net';
 import { EventEmitter } from 'events';
-import type {
-    ITransport,
-    TransportOptions,
-    TransportState,
-    DataEvent,
-    ErrorEvent,
-} from './transport';
-import {
-    ConnectionError,
-    TimeoutError,
-    WriteError,
-    NetErrorCodes,
-    type NetErrorCode,
-} from './errors';
+import { Socket } from 'net';
+import { ConnectionError, NetErrorCodes, TimeoutError, WriteError } from './errors';
+import type { ITransport, TransportOptions, TransportState } from './transport';
 
 /**
  * TCP transport implementation using Node.js net.Socket

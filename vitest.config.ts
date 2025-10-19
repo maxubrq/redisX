@@ -13,6 +13,12 @@ export default defineConfig({
         '**/*.d.ts',
         '**/*.config.*',
         '**/__tests__/**',
+        'examples/**',
+        'docs/**',
+        'scripts/**',
+        '**/*.md',
+        '**/ARCHITECTURE.md',
+        '**/README.md',
       ],
       thresholds: {
         statements: 80,
