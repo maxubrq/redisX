@@ -20,7 +20,7 @@ OVERALL_STATUS=0
 
 echo "📦 Step 1: Install dependencies"
 echo "--------------------------------"
-if pnpm install --frozen-lockfile; then
+if npm install; then
   echo -e "${GREEN}✓ Dependencies installed${NC}"
 else
   echo -e "${RED}✗ Failed to install dependencies${NC}"
@@ -30,7 +30,7 @@ echo ""
 
 echo "🔍 Step 2: Type check"
 echo "---------------------"
-if pnpm typecheck; then
+if npm run typecheck; then
   echo -e "${GREEN}✓ Type check passed${NC}"
 else
   echo -e "${RED}✗ Type check failed${NC}"
@@ -40,7 +40,7 @@ echo ""
 
 echo "🧪 Step 3: Run tests with coverage"
 echo "-----------------------------------"
-if pnpm coverage; then
+if npm run coverage; then
   echo -e "${GREEN}✓ Tests passed${NC}"
   TEST_STATUS="passing"
   TEST_COLOR="brightgreen"
@@ -88,7 +88,7 @@ echo ""
 
 echo "🔨 Step 5: Build project"
 echo "------------------------"
-if pnpm build; then
+if npm run build; then
   echo -e "${GREEN}✓ Build successful${NC}"
 else
   echo -e "${RED}✗ Build failed${NC}"
