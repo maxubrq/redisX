@@ -9,12 +9,12 @@ export interface IResp3Writer {
      * Encode a RESP3 value to Buffer
      */
     encode(value: Resp3): Buffer;
-    
+
     /**
      * Encode multiple RESP3 values to a single Buffer
      */
     encodeArray(values: Resp3[]): Buffer;
-    
+
     /**
      * Encode a command array (for sending commands to Redis)
      */
@@ -29,7 +29,7 @@ export interface WriterOptions {
      * Whether to encode strings as UTF-8 by default (default: true)
      */
     encodeStringsAsUtf8?: boolean;
-    
+
     /**
      * Custom buffer size for initial allocation (default: 1024)
      */
@@ -38,7 +38,7 @@ export interface WriterOptions {
 
 /**
  * RESP3 Writer implementation
- * 
+ *
  * Encodes RESP3 values to the wire format according to the RESP3 specification.
  * Supports all RESP3 types including simple strings, errors, integers, doubles,
  * big numbers, booleans, nulls, blob strings, verbatim strings, arrays, maps,
@@ -373,15 +373,15 @@ export class Resp3Writer implements IResp3Writer {
         if (value && typeof value === 'object' && '__type' in value) {
             return value as Resp3;
         }
-        
+
         if (value === null || value === undefined) {
             return { __type: 'null' };
         }
-        
+
         if (typeof value === 'string') {
             return { __type: 'simple_string', value };
         }
-        
+
         if (typeof value === 'number') {
             if (Number.isInteger(value)) {
                 return { __type: 'integer', value: BigInt(value) };
@@ -389,32 +389,32 @@ export class Resp3Writer implements IResp3Writer {
                 return { __type: 'double', value };
             }
         }
-        
+
         if (typeof value === 'bigint') {
             return { __type: 'integer', value };
         }
-        
+
         if (typeof value === 'boolean') {
             return { __type: 'boolean', value };
         }
-        
+
         if (Buffer.isBuffer(value)) {
             return { __type: 'blob_string', value };
         }
-        
+
         if (Array.isArray(value)) {
             const resp3Array = value.map(item => this.convertToResp3(item));
             return { __type: 'array', value: resp3Array };
         }
-        
+
         if (value instanceof Map) {
             return { __type: 'map', value };
         }
-        
+
         if (value instanceof Set) {
             return { __type: 'set', value };
         }
-        
+
         // For objects, try to convert to simple string
         return { __type: 'simple_string', value: String(value) };
     }

@@ -307,31 +307,31 @@ export class Resp3Parser implements IResp3Parser {
                 const completed = this.finalizeFrameInstant(top);
                 this._frames.pop();
                 const withAttrs = this.attachExplicitAttrs(completed, top.attrs);
-                
+
                 if (this._frames.length === 0) {
                     // Completed the top-level value
                     return withAttrs;
                 }
-                
+
                 // Add this completed frame to its parent
                 const parent = this._frames[this._frames.length - 1]!;
                 parent.items.push(withAttrs);
                 parent.remaining -= 1;
-                
+
                 // Loop back to check if parent is now complete
                 continue;
             }
-            
+
             // Top frame needs more children, parse one
             const start = this._offset;
             const frameCountBefore = this._frames.length;
             const child = this.parseOne();
-            
+
             if (child === NEED_MORE) {
                 this._offset = start;
                 return NEED_MORE;
             }
-            
+
             // If child is undefined, check if a new frame was pushed
             // (parseAggregate pushes frame and returns undefined)
             if (child === undefined) {
@@ -348,7 +348,7 @@ export class Resp3Parser implements IResp3Parser {
             top = this._frames[this._frames.length - 1]!; // Re-get top in case it changed
             top.items.push(child);
             top.remaining -= 1;
-            
+
             // Loop back to check if this frame is now complete
         }
 
@@ -526,7 +526,11 @@ export class Resp3Parser implements IResp3Parser {
     private handleValue(node: Resp3) {
         // Drop internal-null used as attributes placeholder
         // Check if we have pending attributes, which indicates this null is from attributes parsing
-        if (node.__type === 'null' && node.attributes === undefined && this._pendingAttributes !== undefined)
+        if (
+            node.__type === 'null' &&
+            node.attributes === undefined &&
+            this._pendingAttributes !== undefined
+        )
             return;
 
         // Push frames go to onPush if provided, else surface as normal
@@ -577,7 +581,7 @@ export class Resp3Parser implements IResp3Parser {
                     this._offset = start;
                     break;
                 }
-                
+
                 // If node is undefined, check if we pushed a frame (started aggregate)
                 if (node === undefined) {
                     if (this._frames.length > 0) {
@@ -597,7 +601,7 @@ export class Resp3Parser implements IResp3Parser {
                     // No frames and no node means end of buffer
                     break;
                 }
-                
+
                 this.handleValue(node);
             }
         } catch (err) {

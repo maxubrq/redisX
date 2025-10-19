@@ -14,7 +14,7 @@ describe('Resp3Writer', () => {
         it('should encode simple string', () => {
             const value: Resp3 = {
                 __type: 'simple_string',
-                value: 'OK'
+                value: 'OK',
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('+OK\r\n');
@@ -25,7 +25,7 @@ describe('Resp3Writer', () => {
             const value: Resp3 = {
                 __type: 'simple_string',
                 value: 'OK',
-                attributes
+                attributes,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('|1\r\n+ttl\r\n:3600\r\n+OK\r\n');
@@ -36,7 +36,7 @@ describe('Resp3Writer', () => {
         it('should encode error without code', () => {
             const value: Resp3 = {
                 __type: 'error',
-                message: 'Something went wrong'
+                message: 'Something went wrong',
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('-Something went wrong\r\n');
@@ -46,7 +46,7 @@ describe('Resp3Writer', () => {
             const value: Resp3 = {
                 __type: 'error',
                 code: 'ERR',
-                message: 'unknown command'
+                message: 'unknown command',
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('-ERR unknown command\r\n');
@@ -57,7 +57,7 @@ describe('Resp3Writer', () => {
         it('should encode positive integer', () => {
             const value: Resp3 = {
                 __type: 'integer',
-                value: BigInt(42)
+                value: BigInt(42),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe(':42\r\n');
@@ -66,7 +66,7 @@ describe('Resp3Writer', () => {
         it('should encode negative integer', () => {
             const value: Resp3 = {
                 __type: 'integer',
-                value: BigInt(-42)
+                value: BigInt(-42),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe(':-42\r\n');
@@ -75,7 +75,7 @@ describe('Resp3Writer', () => {
         it('should encode zero', () => {
             const value: Resp3 = {
                 __type: 'integer',
-                value: BigInt(0)
+                value: BigInt(0),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe(':0\r\n');
@@ -86,7 +86,7 @@ describe('Resp3Writer', () => {
         it('should encode positive double', () => {
             const value: Resp3 = {
                 __type: 'double',
-                value: 3.14
+                value: 3.14,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe(',3.14\r\n');
@@ -95,7 +95,7 @@ describe('Resp3Writer', () => {
         it('should encode negative double', () => {
             const value: Resp3 = {
                 __type: 'double',
-                value: -3.14
+                value: -3.14,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe(',-3.14\r\n');
@@ -104,7 +104,7 @@ describe('Resp3Writer', () => {
         it('should encode infinity', () => {
             const value: Resp3 = {
                 __type: 'double',
-                value: Infinity
+                value: Infinity,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe(',inf\r\n');
@@ -113,7 +113,7 @@ describe('Resp3Writer', () => {
         it('should encode negative infinity', () => {
             const value: Resp3 = {
                 __type: 'double',
-                value: -Infinity
+                value: -Infinity,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe(',-inf\r\n');
@@ -122,7 +122,7 @@ describe('Resp3Writer', () => {
         it('should encode NaN', () => {
             const value: Resp3 = {
                 __type: 'double',
-                value: NaN
+                value: NaN,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe(',nan\r\n');
@@ -133,7 +133,7 @@ describe('Resp3Writer', () => {
         it('should encode bigint', () => {
             const value: Resp3 = {
                 __type: 'big_number',
-                value: BigInt('123456789012345678901234567890')
+                value: BigInt('123456789012345678901234567890'),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('(123456789012345678901234567890\r\n');
@@ -142,7 +142,7 @@ describe('Resp3Writer', () => {
         it('should encode string big number', () => {
             const value: Resp3 = {
                 __type: 'big_number',
-                value: '123456789012345678901234567890'
+                value: '123456789012345678901234567890',
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('(123456789012345678901234567890\r\n');
@@ -153,7 +153,7 @@ describe('Resp3Writer', () => {
         it('should encode true', () => {
             const value: Resp3 = {
                 __type: 'boolean',
-                value: true
+                value: true,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('#t\r\n');
@@ -162,7 +162,7 @@ describe('Resp3Writer', () => {
         it('should encode false', () => {
             const value: Resp3 = {
                 __type: 'boolean',
-                value: false
+                value: false,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('#f\r\n');
@@ -172,7 +172,7 @@ describe('Resp3Writer', () => {
     describe('Null', () => {
         it('should encode null', () => {
             const value: Resp3 = {
-                __type: 'null'
+                __type: 'null',
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('_\r\n');
@@ -183,7 +183,7 @@ describe('Resp3Writer', () => {
         it('should encode blob string', () => {
             const value: Resp3 = {
                 __type: 'blob_string',
-                value: Buffer.from('hello')
+                value: Buffer.from('hello'),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('$5\r\nhello\r\n');
@@ -192,7 +192,7 @@ describe('Resp3Writer', () => {
         it('should encode null blob string', () => {
             const value: Resp3 = {
                 __type: 'blob_string',
-                value: null
+                value: null,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('$-1\r\n');
@@ -201,7 +201,7 @@ describe('Resp3Writer', () => {
         it('should encode empty blob string', () => {
             const value: Resp3 = {
                 __type: 'blob_string',
-                value: Buffer.alloc(0)
+                value: Buffer.alloc(0),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('$0\r\n\r\n');
@@ -212,7 +212,7 @@ describe('Resp3Writer', () => {
         it('should encode blob error without code', () => {
             const value: Resp3 = {
                 __type: 'blob_error',
-                message: 'Something went wrong'
+                message: 'Something went wrong',
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('!20\r\nSomething went wrong\r\n');
@@ -222,7 +222,7 @@ describe('Resp3Writer', () => {
             const value: Resp3 = {
                 __type: 'blob_error',
                 code: 'ERR',
-                message: 'unknown command'
+                message: 'unknown command',
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('!19\r\nERR unknown command\r\n');
@@ -234,7 +234,7 @@ describe('Resp3Writer', () => {
             const value: Resp3 = {
                 __type: 'verbatim_string',
                 format: 'txt',
-                value: 'Some string'
+                value: 'Some string',
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('=15\r\ntxt:Some string\r\n');
@@ -245,7 +245,7 @@ describe('Resp3Writer', () => {
         it('should encode empty array', () => {
             const value: Resp3 = {
                 __type: 'array',
-                value: []
+                value: [],
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('*0\r\n');
@@ -254,7 +254,7 @@ describe('Resp3Writer', () => {
         it('should encode null array', () => {
             const value: Resp3 = {
                 __type: 'array',
-                value: null
+                value: null,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('*-1\r\n');
@@ -266,8 +266,8 @@ describe('Resp3Writer', () => {
                 value: [
                     { __type: 'simple_string', value: 'hello' },
                     { __type: 'integer', value: BigInt(42) },
-                    { __type: 'null' }
-                ]
+                    { __type: 'null' },
+                ],
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('*3\r\n+hello\r\n:42\r\n_\r\n');
@@ -281,11 +281,11 @@ describe('Resp3Writer', () => {
                         __type: 'array',
                         value: [
                             { __type: 'integer', value: BigInt(1) },
-                            { __type: 'integer', value: BigInt(2) }
-                        ]
+                            { __type: 'integer', value: BigInt(2) },
+                        ],
                     },
-                    { __type: 'simple_string', value: 'world' }
-                ]
+                    { __type: 'simple_string', value: 'world' },
+                ],
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('*2\r\n*2\r\n:1\r\n:2\r\n+world\r\n');
@@ -296,7 +296,7 @@ describe('Resp3Writer', () => {
         it('should encode empty map', () => {
             const value: Resp3 = {
                 __type: 'map',
-                value: new Map()
+                value: new Map(),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('%0\r\n');
@@ -305,7 +305,7 @@ describe('Resp3Writer', () => {
         it('should encode null map', () => {
             const value: Resp3 = {
                 __type: 'map',
-                value: null
+                value: null,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('%-1\r\n');
@@ -314,11 +314,11 @@ describe('Resp3Writer', () => {
         it('should encode map with string keys and values', () => {
             const map = new Map([
                 ['first', { __type: 'integer', value: BigInt(1) }],
-                ['second', { __type: 'integer', value: BigInt(2) }]
+                ['second', { __type: 'integer', value: BigInt(2) }],
             ]);
             const value: Resp3 = {
                 __type: 'map',
-                value: map
+                value: map,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('%2\r\n+first\r\n:1\r\n+second\r\n:2\r\n');
@@ -329,7 +329,7 @@ describe('Resp3Writer', () => {
         it('should encode empty set', () => {
             const value: Resp3 = {
                 __type: 'set',
-                value: new Set()
+                value: new Set(),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('~0\r\n');
@@ -338,7 +338,7 @@ describe('Resp3Writer', () => {
         it('should encode null set', () => {
             const value: Resp3 = {
                 __type: 'set',
-                value: null
+                value: null,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('~-1\r\n');
@@ -347,11 +347,11 @@ describe('Resp3Writer', () => {
         it('should encode set with values', () => {
             const set = new Set([
                 { __type: 'simple_string', value: 'hello' },
-                { __type: 'simple_string', value: 'world' }
+                { __type: 'simple_string', value: 'world' },
             ]);
             const value: Resp3 = {
                 __type: 'set',
-                value: set
+                value: set,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('~2\r\n+hello\r\n+world\r\n');
@@ -364,8 +364,8 @@ describe('Resp3Writer', () => {
                 __type: 'push',
                 value: [
                     { __type: 'simple_string', value: 'message' },
-                    { __type: 'simple_string', value: 'hello world' }
-                ]
+                    { __type: 'simple_string', value: 'hello world' },
+                ],
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('>2\r\n+message\r\n+hello world\r\n');
@@ -376,12 +376,12 @@ describe('Resp3Writer', () => {
         it('should encode attributes', () => {
             const attributes = new Map([
                 ['ttl', { __type: 'integer', value: BigInt(3600) }],
-                ['type', { __type: 'simple_string', value: 'string' }]
+                ['type', { __type: 'simple_string', value: 'string' }],
             ]);
             const value: Resp3 = {
                 __type: 'simple_string',
                 value: 'OK',
-                attributes
+                attributes,
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('|2\r\n+ttl\r\n:3600\r\n+type\r\n+string\r\n+OK\r\n');
@@ -392,7 +392,7 @@ describe('Resp3Writer', () => {
         it('should encode array of values', () => {
             const values: Resp3[] = [
                 { __type: 'simple_string', value: 'hello' },
-                { __type: 'integer', value: BigInt(42) }
+                { __type: 'integer', value: BigInt(42) },
             ];
             const result = writer.encodeArray(values);
             expect(result.toString()).toBe('*2\r\n+hello\r\n:42\r\n');
@@ -418,7 +418,9 @@ describe('Resp3Writer', () => {
         it('should encode command with buffer arguments', () => {
             const buffer = Buffer.from('binary data');
             const result = writer.encodeCommand('SET', 'key', buffer);
-            expect(result.toString()).toBe('*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$11\r\nbinary data\r\n');
+            expect(result.toString()).toBe(
+                '*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$11\r\nbinary data\r\n',
+            );
         });
     });
 
@@ -427,7 +429,7 @@ describe('Resp3Writer', () => {
             const largeString = 'x'.repeat(10000);
             const value: Resp3 = {
                 __type: 'blob_string',
-                value: Buffer.from(largeString)
+                value: Buffer.from(largeString),
             };
             const result = writer.encode(value);
             expect(result.length).toBe(10000 + 10); // 10000 bytes + $10000\r\n\r\n (10 chars for "10000")
@@ -436,13 +438,13 @@ describe('Resp3Writer', () => {
         it('should reuse buffer efficiently', () => {
             const writer1 = new Resp3Writer();
             const writer2 = new Resp3Writer();
-            
+
             const value1: Resp3 = { __type: 'simple_string', value: 'hello' };
             const value2: Resp3 = { __type: 'simple_string', value: 'world' };
-            
+
             const result1 = writer1.encode(value1);
             const result2 = writer2.encode(value2);
-            
+
             expect(result1.toString()).toBe('+hello\r\n');
             expect(result2.toString()).toBe('+world\r\n');
         });
@@ -452,7 +454,7 @@ describe('Resp3Writer', () => {
         it('should handle empty string', () => {
             const value: Resp3 = {
                 __type: 'simple_string',
-                value: ''
+                value: '',
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('+\r\n');
@@ -461,7 +463,7 @@ describe('Resp3Writer', () => {
         it('should handle string with special characters', () => {
             const value: Resp3 = {
                 __type: 'blob_string',
-                value: Buffer.from('hello\r\nworld')
+                value: Buffer.from('hello\r\nworld'),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('$12\r\nhello\r\nworld\r\n');
@@ -470,7 +472,7 @@ describe('Resp3Writer', () => {
         it('should handle unicode strings', () => {
             const value: Resp3 = {
                 __type: 'blob_string',
-                value: Buffer.from('你好世界', 'utf8')
+                value: Buffer.from('你好世界', 'utf8'),
             };
             const result = writer.encode(value);
             expect(result.toString()).toBe('$12\r\n你好世界\r\n');
